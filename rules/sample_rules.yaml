@@ -1,0 +1,133 @@
+# self check
+# 1. field exists
+# 2. required
+# 3. column length
+# 4. is number
+# 5. value range
+# 6. not valid date
+# 7. not valid time
+# 8. not valid datetime
+# 9. filed in list
+# 10. corss field comparison
+
+# lookup tables
+# 1. codelist exists
+# 2. value exists
+# 3. combination column check
+# 4. reconciliation check
+
+
+rules:
+  - id: R001
+    description: "admission_type must exist, but it can be empty"
+    type: field_exist
+    field: admission_type
+
+  - id: R002
+    description: "patient_id must exist and be non-empty"
+    type: required
+    field: patient_id
+
+  - id: R003
+    description: "ssn must greater than 5 and less than 11"
+    type: value_length
+    field: patient_id
+    params:
+        min: 5
+        max: 10
+
+  - id: R004
+    description: "age must be integer"
+    type: number_filed
+    field: age
+
+  - id: R005
+    description: "age must be integer between 0 and 120"
+    type: range
+    field: age
+    params:
+      min: 0
+      max: 120
+
+  - id: R006
+    description: "admission_date must match date pattern, and is valid date"
+    type: valid_date
+    field: admission_date
+    pattern_regex: \d{4,}-\d{2,}-\d{2,}
+
+  - id: R007
+    description: "admission_time must match time pattern, and is valid time"
+    type: valid_time
+    field: admission_time
+    pattern_regex: \d{2,}:\d{2,}:\d{2}
+
+  - id: R008
+    description: "ts must be valid datetime"
+    type: valid_datetime
+    field: ts
+    pattern_regex: \d{4,}-\d{2,}-\d{2,}T\d{2,}:\d{2,}:\d{2}
+
+  - id: R009
+    description: "value in list, this list should be split by comma"
+    type: domain_check
+    filed: diagnosis
+    code: A01,B02,C03,D04
+
+  - id: R010
+    description: "admission_date must be <= discharge_date"
+    type: cross_field
+    params:
+      left: admission_date
+      compare: <=
+      right: discharge_date
+
+# lookup tables
+# 1. codelist exists
+# 2. reconciliation check
+
+  - id: CT101
+    description: "admission_type must exist in domain_codes"
+    type: lookup_exists
+    field: admission_type
+    lookup:
+      type: table
+      name: domain_codes
+      loader: "file://references/domain_codes.jsonl"
+      key: code_name
+      value: code_value
+    params:
+      code_name: admission_type
+
+  - id: CT102
+    description: "check column one by one"
+    type: reconciliation
+    lookup:
+      type: table
+      name: patient_admission_event
+      loader: "file://references/patient_admission_event.jsonl"
+    params:
+      - type: equality
+        left: patient_id
+        right: patient_id
+      - type: equality
+        left: admission_type
+        right: admission_type
+      - type: compare
+        left: age
+        comparetor: <=
+        right: age
+
+  - id: CT103
+    description: "event.ts should be within 48h of schedule.scheduled_time"
+    type: time_diff
+    lookup:
+      type: table
+      name: schedule
+      loader: "file://references/schedule.jsonl"
+      key: visit_id
+    params:
+      key_map:
+        visit_id: visit_id
+      left_time: ts
+      right_time: scheduled_time
+      max_seconds: 172800
