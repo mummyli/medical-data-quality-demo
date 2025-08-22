@@ -7,7 +7,8 @@ from urllib.parse import urlparse
 import boto3
 import threading
 import time
-from datetime import datetime, timezone
+import core.rule_strategy as rs
+from core.result_writer import OutputWriterFactory
 
 LOOKUPS={}
 
@@ -72,18 +73,6 @@ def reload_lookups_periodically(rules, interval=300):
         load_lookups(rules)
         time.sleep(interval)
         
-        
-def apply_single_rules(event, rules):
-    pass
-
-
-def apply_cross_table_rules(event, rules):
-    pass
-
-
-def apply_reconciliation_rules(event, rules):
-    pass
-        
 
 def main():
     parser = argparse.ArgumentParser()
@@ -91,6 +80,11 @@ def main():
     parser.add_argument("--topic", default="clinical-events")
     parser.add_argument("--rules", default="./rules/sample_rules.yaml")
     parser.add_argument("--bucket", default="clinical-bucket")
+    parser.add_argument("--flush_interval", default="60")
+    parser.add_argument("--batch_size", default="50")
+    parser.add_argument("--output_type", default="local")
+    parser.add_argument("--output_dir", default="./result")
+    parser.add_argument("--connection_string", default="")
     args = parser.parse_args()
 
     with open(os.path.abspath(args.rules),'r',encoding='utf8') as f:
@@ -110,31 +104,48 @@ def main():
                              group_id="mdq-group"
                              )
 
-    s3 = boto3.client("s3",
-                      aws_access_key_id="access_key",
-                      aws_secret_access_key="secret_access_key")
-
-    
-    out_key_prefix = "processed/" + datetime.now(timezone.utc).strftime("%Y-%m-%d/")
+    output_writer = OutputWriterFactory.create_writer(
+        args.output_type,
+        bucket=args.bucket,
+        output_dir=args.output_dir,
+        connection_string=args.connection_string
+    )
 
     print("Processor started. Listening for events...")
     batch = []
     count = 0
-    for msg in consumer:
-        event = msg.value
-        failures = []
-        failures.extend(apply_single_rules(event, rules))
-        failures.extend(apply_cross_table_rules(event, rules))
-        failures.extend(apply_reconciliation_rules(event, rules))
-        event["_mdq_failures"] = failures
-        batch.append(event)
-        count += 1
-        if len(batch) >= 50:
-            key = out_key_prefix + f"batch-{int(time.time())}.jsonl"
-            payload = "\n".join([json.dumps(e, ensure_ascii=False) for e in batch]).encode("utf-8")
-            s3.put_object(Bucket=args.bucket, Key=key, Body=payload)
-            print(f"Wrote {len(batch)} events to s3://{args.bucket}/{key}, failures in this batch: {sum(1 for e in batch if e['_mdq_failures'])}")
-            batch = []
+    batch_index = 0
+    last_flush_time = time.time()
+    
+    try:
+        for msg in consumer:
+            event = msg.value
+            print(f"Process event: {event}")
+            failures = []
+            failures.extend(rs.apply_rules(event, rules))
+            event["_mdq_failures"] = failures
+            batch.append(event)
+            count += 1
+            
+            current_time = time.time()
+            time_since_last_flush = current_time - last_flush_time
+            
+            if len(batch) >= int(args.batch_size) or time_since_last_flush >= int(args.flush_interval):
+                if batch:
+                    output_path = output_writer.write_batch(batch, batch_index)
+                    failures_count = sum(1 for e in batch if e['_mdq_failures'])
+                    print(f"Wrote {len(batch)} events to {output_path}, failures: {failures_count}")
+                    batch = []
+                    batch_index += 1
+                    last_flush_time = current_time
+                    
+    except KeyboardInterrupt:
+        print("Interrupted by user")
+    finally:
+        if batch:
+            output_path = output_writer.write_batch(batch, batch_index)
+            failures_count = sum(1 for e in batch if e['_mdq_failures'])
+            print(f"Wrote remaining {len(batch)} events to {output_path}, failures: {failures_count}")
         
 
 if __name__ == '__main__':
