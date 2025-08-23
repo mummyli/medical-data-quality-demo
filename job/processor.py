@@ -3,75 +3,11 @@ import os
 import yaml
 from kafka import KafkaConsumer
 import json
-from urllib.parse import urlparse
-import boto3
 import threading
 import time
 import core.rule_strategy as rs
 from core.result_writer import OutputWriterFactory
-
-LOOKUPS={}
-
-def load_lookup_loader(loader_uri):
-    if loader_uri.startswith("file://"):
-        path = loader_uri[len("file://"):]
-        table = {}
-        with open(path, "r", encoding='utf8') as f:
-            for line in f:
-                if not line.strip(): continue
-                rec = json.loads(line)
-                key = rec.get('patient_id') or rec.get('visit_id') or rec.get('id') or None
-                if key:
-                    table[key] = rec
-        return table
-    elif loader_uri.startswith("s3://"):
-        parsed = urlparse(loader_uri)
-        bucket = parsed.netloc
-        key = parsed.path.lstrip('/')
-        s3 = boto3.client('s3')
-        obj = s3.get_object(Bucket=bucket, Key=key)
-        body = obj['Body'].read().decode('utf8').splitlines()
-        table = {}
-        for line in body:
-            if not line.strip(): continue
-            rec = json.loads(line)
-            key = rec.get('patient_id') or rec.get('visit_id') or rec.get('id') or None
-            if key:
-                table[key] = rec
-        return table
-    elif loader_uri.endswith('.json'):
-        with open(loader_uri, 'r', encoding='utf8') as f:
-            return json.load(f)
-    else:
-        if os.path.exists(loader_uri):
-            table = {}
-            with open(loader_uri, 'r', encoding='utf8') as f:
-                for line in f:
-                    if not line.strip(): continue
-                    rec = json.loads(line)
-                    key = rec.get('patient_id') or rec.get('visit_id') or rec.get('id') or None
-                    if key:
-                        table[key] = rec
-            return table
-    return {}
-
-
-def load_lookups(rules):
-    for r in rules:
-        if 'lookup' in r:
-            loader = r['lookup'].get('loader')
-            name = r['lookup'].get('name')
-            if loader and name:
-                try:
-                    LOOKUPS[name] = load_lookup_loader(loader)
-                    print(f"[lookup] loaded {name} ({len(LOOKUPS[name])} records) from {loader}")
-                except Exception as e:
-                    print(f"[lookup] failed to load {name} {loader} {e}")
-
-def reload_lookups_periodically(rules, interval=300):
-    while True:
-        load_lookups(rules)
-        time.sleep(interval)
+from core.lookup_loader import load_lookups, reload_lookups_periodically
         
 
 def main():
@@ -89,7 +25,6 @@ def main():
 
     with open(os.path.abspath(args.rules),'r',encoding='utf8') as f:
         rules = yaml.safe_load(f)['rules']
-        print(rules)
 
     load_lookups(rules)
 
@@ -120,7 +55,6 @@ def main():
     try:
         for msg in consumer:
             event = msg.value
-            print(f"Process event: {event}")
             failures = []
             failures.extend(rs.apply_rules(event, rules))
             event["_mdq_failures"] = failures

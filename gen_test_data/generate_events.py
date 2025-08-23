@@ -8,6 +8,11 @@ def generate_event(i):
     pid = f"patient-{(i%50)+1}"
     visit_id = f"visit-{(i%100)+1}"
     admit = datetime.date(2025,1,1) + datetime.timedelta(days=random.randint(0,365))
+
+    hour = random.randint(0, 23)
+    minute = random.randint(0, 59)
+    second = random.randint(0, 59)
+    
     discharge = admit + datetime.timedelta(days=random.randint(0,10))
     if random.random() < 0.05:
         age = 999  # generate incorrect value
@@ -22,6 +27,7 @@ def generate_event(i):
         "visit_id": visit_id,
         "age": age,
         "admission_date": admit.isoformat(),
+        "admission_time": f"{'0' + str(hour) if hour < 10 else str(hour)}:{minute}:{second}",
         "discharge_date": discharge.isoformat(),
         "admission_type": admission_type,
         "ssn": hashlib.sha1(pid.encode()).hexdigest()[:10] if pid else "",
@@ -29,7 +35,19 @@ def generate_event(i):
         "lab_unit": lab_unit,
         "ts": datetime.datetime.utcnow().isoformat() + "Z"
     }
-    return event
+    
+    patient_admission_event = {
+        "event_id": f"evt-{i}",
+        "patient_id": pid,
+        "visit_id": visit_id,
+        "age": age,
+        "admission_date": admit.isoformat(),
+        "admission_time": f"{'0' + str(hour) if hour < 10 else str(hour)}:{minute}:{second}",
+        "admission_type": admission_type,
+        "ts": datetime.datetime.utcnow().isoformat()
+    }
+    
+    return event, patient_admission_event
 
 
 def main():

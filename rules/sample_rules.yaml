@@ -1,22 +1,3 @@
-# self check
-# 1. field exists
-# 2. required
-# 3. column length
-# 4. is number
-# 5. value range
-# 6. not valid date
-# 7. not valid time
-# 8. not valid datetime
-# 9. filed in list
-# 10. corss field comparison
-
-# lookup tables
-# 1. codelist exists
-# 2. value exists
-# 3. combination column check
-# 4. reconciliation check
-
-
 rules:
   - id: R001
     description: "admission_type must exist, but it can be empty"
@@ -81,10 +62,6 @@ rules:
       compare: <=
       right: discharge_date
 
-# lookup tables
-# 1. codelist exists
-# 2. reconciliation check
-
   - id: CT101
     description: "admission_type must exist in domain_codes"
     type: lookup_exists
@@ -92,7 +69,7 @@ rules:
     lookup:
       type: table
       name: domain_codes
-      loader: "file://references/domain_codes.jsonl"
+      loader: "./references/domain_codes.jsonl"
       key: code_name
       value: code_value
     params:
@@ -104,7 +81,7 @@ rules:
     lookup:
       type: table
       name: patient_admission_event
-      loader: "file://references/patient_admission_event.jsonl"
+      loader: "./references/patient_admission_event.jsonl"
     params:
       - type: equality
         left: patient_id
@@ -123,7 +100,7 @@ rules:
     lookup:
       type: table
       name: schedule
-      loader: "file://references/schedule.jsonl"
+      loader: "./references/schedule.jsonl"
       key: visit_id
     params:
       key_map:
